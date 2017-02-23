@@ -7,7 +7,7 @@ We intend to perform image classification on the Animals on the Web dataset. The
 
 The images of these 2 classes of animals are stored in the sub-folders Leopard and Giraffe inside the folder `Animals_Data`.
 
-The accuracy obtained via transfer learning using Google's Inception-v3 model was approx 96%.
+The accuracy obtained via transfer learning using Google's Inception-v3 model was approx 98%.
 
 
 ## Dataset
