@@ -7,7 +7,7 @@ We intend to perform image classification on the Animals on the Web dataset. The
 
 The images of these 2 classes of animals are stored in the sub-folders Leopard and Giraffe inside the folder Animals_data.
 
-The accuracy obtained via transfer learning using Google's Inception-v3 model was 96%.
+The accuracy obtained via transfer learning using Google's Inception-v3 model was approx 96%.
 
 
 ## Dataset
@@ -31,5 +31,21 @@ Leopard and Giraffe images can be found in the [**Animals on the Web**](http://t
 
 Just run and follow the Ipython Notebook which contains the documented code.
 
+You can also test our animal classification model `output_graph.pb` by running :
+
+```python test.py```
+
+After running, for the leopard image which isn't originally in the training set:
+
+<img src = "">
+
+The output of the script is as follows: 
+
+<code>
+leopard (score = 0.99393)
+giraffe (score = 0.00607)
+</code>
+
+which shows good confidence in classification.
 <hr>
 
