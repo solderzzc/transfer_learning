@@ -5,7 +5,7 @@ The code in this notebook is in response to Siraj's Image classifier Challenge w
 
 We intend to perform image classification on the Animals on the Web dataset. The dataset contains images of 10 different classes of animals. However we would  perform a binary classification task to classify Leopard and Giraffe images using Transfer Learning in Tensorflow.
 
-The images of these 2 classes of animals are stored in the sub-folders Leopard and Giraffe inside the folder Animals_data.
+The images of these 2 classes of animals are stored in the sub-folders Leopard and Giraffe inside the folder `Animals_Data`.
 
 The accuracy obtained via transfer learning using Google's Inception-v3 model was approx 96%.
 
@@ -37,14 +37,11 @@ You can also test our animal classification model `output_graph.pb` by running :
 
 After running, for the leopard image which isn't originally in the training set:
 
-<img src = "">
+<img src = "https://raw.githubusercontent.com/Aniruddha-Tapas/Transfer-Learning-for-Animal-Classification-in-Tensorflow/master/test_images/leopard2.jpg">
 
 The output of the script is as follows: 
 
-<code>
-leopard (score = 0.99393)
-giraffe (score = 0.00607)
-</code>
+<img src = "https://raw.githubusercontent.com/Aniruddha-Tapas/Transfer-Learning-for-Animal-Classification-in-Tensorflow/master/images/output.png">
 
 which shows good confidence in classification.
 <hr>
