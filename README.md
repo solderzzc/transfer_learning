@@ -1,4 +1,5 @@
 <hr>
+
 # Transfer Learning for Animal Classification in Tensorflow
 
 The code in this notebook is in response to Siraj's Image classifier Challenge which can be found [here](https://www.youtube.com/watch?v=cAICT4Al5Ow).
@@ -22,12 +23,12 @@ I've already included the preprocessed dataset in the Github repository.  But if
 Leopard and Giraffe images can be found in the [**Animals on the Web**](http://tamaraberg.com/animalDataset/index.html) Dataset. You can download the Giraffe images (size : 38 MB) from [here](http://tamaraberg.com/animalDataset/tarfiles/giraffe.tar.gz) and the Leopard images (size : 49 MB) from [here](http://tamaraberg.com/animalDataset/tarfiles/leopard.tar.gz). I used only the positive samples of these images which can be saved using the `possamples.html` file. Just extract the two tar files in a folder. Then open the `possamples.html` for giraffe and leopard in the browser, right click anywhere in the browser window and choose *Save as*. Save the webpage and automatically all the positive samples of the giraffe and leopard images would be stored in the directory you specified.
 
 
-##Requirements
+## Requirements
 
 * Tensorflow
 * PIL (for preprocessing the dataset)
 
-##Usage 
+## Usage 
 
 Just run and follow the Ipython Notebook which contains the documented code.
 
