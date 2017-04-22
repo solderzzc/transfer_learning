@@ -19,7 +19,7 @@ from tensorflow.python.platform import gfile
 from tensorflow.python.util import compat
 
 image_dir = os.path.join("Animal_Data")
-output_graph = "bottlenecks_graph.pb"
+output_graph = "output_graph.pb"
 output_labels = "output_labels.txt"
 summaries_dir = "/tmp/output_labels.txt"
 how_many_training_steps = 500
@@ -332,6 +332,80 @@ def get_random_cached_bottlenecks(sess, image_lists, how_many, category,
     return bottlenecks, ground_truths, filenames
 
 
+def get_random_distorted_bottlenecks(
+        sess, image_lists, how_many, category, image_dir, input_jpeg_tensor,
+        distorted_image, resized_input_tensor, bottleneck_tensor):
+    class_count = len(image_lists.keys())
+    bottlenecks = []
+    ground_truths = []
+    for unused_i in range(how_many):
+        label_index = random.randrange(class_count)
+        label_name = list(image_lists.keys())[label_index]
+        image_index = random.randrange(MAX_NUM_IMAGES_PER_CLASS + 1)
+        image_path = get_image_path(image_lists, label_name, image_index, image_dir,
+                                    category)
+        if not gfile.Exists(image_path):
+            tf.logging.fatal('File does not exist %s', image_path)
+        jpeg_data = gfile.FastGFile(image_path, 'rb').read()
+        # Note that we materialize the distorted_image_data as a numpy array before
+        # sending running inference on the image. This involves 2 memory copies and
+        # might be optimized in other implementations.
+        distorted_image_data = sess.run(distorted_image,
+                                        {input_jpeg_tensor: jpeg_data})
+        bottleneck = run_bottleneck_on_image(sess, distorted_image_data,
+                                             resized_input_tensor,
+                                             bottleneck_tensor)
+        ground_truth = np.zeros(class_count, dtype=np.float32)
+        ground_truth[label_index] = 1.0
+        bottlenecks.append(bottleneck)
+        ground_truths.append(ground_truth)
+    return bottlenecks, ground_truths
+
+
+def should_distort_images(flip_left_right, random_crop, random_scale,
+                          random_brightness):
+    return (flip_left_right or (random_crop != 0) or (random_scale != 0) or
+            (random_brightness != 0))
+
+
+def add_input_distortions(flip_left_right, random_crop, random_scale,
+                          random_brightness):
+
+    jpeg_data = tf.placeholder(tf.string, name='DistortJPGInput')
+    decoded_image = tf.image.decode_jpeg(jpeg_data, channels=MODEL_INPUT_DEPTH)
+    decoded_image_as_float = tf.cast(decoded_image, dtype=tf.float32)
+    decoded_image_4d = tf.expand_dims(decoded_image_as_float, 0)
+    margin_scale = 1.0 + (random_crop / 100.0)
+    resize_scale = 1.0 + (random_scale / 100.0)
+    margin_scale_value = tf.constant(margin_scale)
+    resize_scale_value = tf.random_uniform(tensor_shape.scalar(),
+                                           minval=1.0,
+                                           maxval=resize_scale)
+    scale_value = tf.multiply(margin_scale_value, resize_scale_value)
+    precrop_width = tf.multiply(scale_value, MODEL_INPUT_WIDTH)
+    precrop_height = tf.multiply(scale_value, MODEL_INPUT_HEIGHT)
+    precrop_shape = tf.stack([precrop_height, precrop_width])
+    precrop_shape_as_int = tf.cast(precrop_shape, dtype=tf.int32)
+    precropped_image = tf.image.resize_bilinear(decoded_image_4d,
+                                                precrop_shape_as_int)
+    precropped_image_3d = tf.squeeze(precropped_image, squeeze_dims=[0])
+    cropped_image = tf.random_crop(precropped_image_3d,
+                                   [MODEL_INPUT_HEIGHT, MODEL_INPUT_WIDTH,
+                                    MODEL_INPUT_DEPTH])
+    if flip_left_right:
+        flipped_image = tf.image.random_flip_left_right(cropped_image)
+    else:
+        flipped_image = cropped_image
+    brightness_min = 1.0 - (random_brightness / 100.0)
+    brightness_max = 1.0 + (random_brightness / 100.0)
+    brightness_value = tf.random_uniform(tensor_shape.scalar(),
+                                         minval=brightness_min,
+                                         maxval=brightness_max)
+    brightened_image = tf.multiply(flipped_image, brightness_value)
+    distort_result = tf.expand_dims(brightened_image, 0, name='DistortResult')
+    return jpeg_data, distort_result
+
+
 def variable_summaries(var):
 
     with tf.name_scope('summaries'):
@@ -384,6 +458,19 @@ def add_final_training_ops(class_count, final_tensor_name, bottleneck_tensor):
             final_tensor)
 
 
+def add_evaluation_step(result_tensor, ground_truth_tensor):
+    with tf.name_scope('accuracy'):
+        with tf.name_scope('correct_prediction'):
+            prediction = tf.argmax(result_tensor, 1)
+            correct_prediction = tf.equal(
+                prediction, tf.argmax(ground_truth_tensor, 1))
+        with tf.name_scope('accuracy'):
+            evaluation_step = tf.reduce_mean(
+                tf.cast(correct_prediction, tf.float32))
+    tf.summary.scalar('accuracy', evaluation_step)
+    return evaluation_step, prediction
+
+
 # Setup the directory we'll write summaries to for TensorBoard
 if tf.gfile.Exists(summaries_dir):
     tf.gfile.DeleteRecursively(summaries_dir)
@@ -403,8 +490,106 @@ if class_count == 1:
           ' - multiple classes are needed for classification.')
 start_time = None
 image_counter = 0
+# See if the command-line flags mean we're applying any distortions.
+do_distort_images = should_distort_images(
+    flip_left_right, random_crop, random_scale,
+    random_brightness)
 sess = tf.Session()
-# We'll make sure we've calculated the 'bottleneck' image summaries and
-# cached them on disk.
-cache_bottlenecks(sess, image_lists, image_dir, bottleneck_dir,
-                  jpeg_data_tensor, bottleneck_tensor)
+if do_distort_images:
+    # We will be applying distortions, so setup the operations we'll need.
+    distorted_jpeg_data_tensor, distorted_image_tensor = add_input_distortions(
+        flip_left_right, random_crop, random_scale,
+        random_brightness)
+else:
+    # We'll make sure we've calculated the 'bottleneck' image summaries and
+    # cached them on disk.
+    cache_bottlenecks(sess, image_lists, image_dir, bottleneck_dir,
+                      jpeg_data_tensor, bottleneck_tensor)
+# Add the new layer that we'll be training.
+(train_step, cross_entropy, bottleneck_input, ground_truth_input,
+ final_tensor) = add_final_training_ops(len(image_lists.keys()),
+                                        final_tensor_name,
+                                        bottleneck_tensor)
+# Create the operations we need to evaluate the accuracy of our new layer.
+evaluation_step, prediction = add_evaluation_step(
+    final_tensor, ground_truth_input)
+# Merge all the summaries and write them out to /tmp/retrain_logs (by default)
+merged = tf.summary.merge_all()
+train_writer = tf.summary.FileWriter(summaries_dir + '/train',
+                                     sess.graph)
+validation_writer = tf.summary.FileWriter(summaries_dir + '/validation')
+# Set up all our weights to their initial default values.
+init = tf.global_variables_initializer()
+sess.run(init)
+# Run the training for as many cycles as requested on the command line.
+for i in range(how_many_training_steps):
+    # Get a batch of input bottleneck values, either calculated fresh every time
+    # with distortions applied, or from the cache stored on disk.
+    if do_distort_images:
+        train_bottlenecks, train_ground_truth = get_random_distorted_bottlenecks(
+            sess, image_lists, train_batch_size, 'training',
+            image_dir, distorted_jpeg_data_tensor,
+            distorted_image_tensor, resized_image_tensor, bottleneck_tensor)
+    else:
+        train_bottlenecks, train_ground_truth, _ = get_random_cached_bottlenecks(
+            sess, image_lists, train_batch_size, 'training',
+            bottleneck_dir, image_dir, jpeg_data_tensor,
+            bottleneck_tensor)
+    # Feed the bottlenecks and ground truth into the graph, and run a training
+    # step. Capture training summaries for TensorBoard with the `merged` op.
+    train_summary, _ = sess.run([merged, train_step],
+                                feed_dict={bottleneck_input: train_bottlenecks,
+                                           ground_truth_input: train_ground_truth})
+    train_writer.add_summary(train_summary, i)
+    # Every so often, print out how well the graph is training.
+    is_last_step = (i + 1 == how_many_training_steps)
+    if (i % eval_step_interval) == 0 or is_last_step:
+        train_accuracy, cross_entropy_value = sess.run(
+            [evaluation_step, cross_entropy],
+            feed_dict={bottleneck_input: train_bottlenecks,
+                       ground_truth_input: train_ground_truth})
+        print('%s: Step %d: Train accuracy = %.1f%%' % (datetime.now(), i,
+                                                        train_accuracy * 100))
+        print('%s: Step %d: Cross entropy = %f' % (datetime.now(), i,
+                                                   cross_entropy_value))
+        validation_bottlenecks, validation_ground_truth, _ = (
+            get_random_cached_bottlenecks(
+                sess, image_lists, validation_batch_size, 'validation',
+                bottleneck_dir, image_dir, jpeg_data_tensor,
+                bottleneck_tensor))
+        # Run a validation step and capture training summaries for TensorBoard
+        # with the `merged` op.
+        validation_summary, validation_accuracy = sess.run(
+            [merged, evaluation_step],
+            feed_dict={bottleneck_input: validation_bottlenecks,
+                       ground_truth_input: validation_ground_truth})
+        validation_writer.add_summary(validation_summary, i)
+        print('%s: Step %d: Validation accuracy = %.1f%% (N=%d)' %
+              (datetime.now(), i, validation_accuracy * 100,
+               len(validation_bottlenecks)))
+# We've completed all our training, so run a final test evaluation on
+# some new images we haven't used before.
+test_bottlenecks, test_ground_truth, test_filenames = (
+    get_random_cached_bottlenecks(sess, image_lists, test_batch_size,
+                                  'testing', bottleneck_dir,
+                                  image_dir, jpeg_data_tensor,
+                                  bottleneck_tensor))
+test_accuracy, predictions = sess.run(
+    [evaluation_step, prediction],
+    feed_dict={bottleneck_input: test_bottlenecks,
+               ground_truth_input: test_ground_truth})
+print('Final test accuracy = %.1f%% (N=%d)' % (
+    test_accuracy * 100, len(test_bottlenecks)))
+if print_misclassified_test_images:
+    print('=== MISCLASSIFIED TEST IMAGES ===')
+    for i, test_filename in enumerate(test_filenames):
+        if predictions[i] != test_ground_truth[i].argmax():
+            print('%70s  %s' %
+                  (test_filename, image_lists.keys()[predictions[i]]))
+# Write out the trained graph and labels with the weights stored as constants.
+output_graph_def = graph_util.convert_variables_to_constants(
+    sess, graph.as_graph_def(), [final_tensor_name])
+with gfile.FastGFile(output_graph, 'wb') as f:
+    f.write(output_graph_def.SerializeToString())
+with gfile.FastGFile(output_labels, 'w') as f:
+    f.write('\n'.join(image_lists.keys()) + '\n')
