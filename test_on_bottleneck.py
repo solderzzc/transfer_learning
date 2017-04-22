@@ -17,7 +17,7 @@ def get_bottleneck(bottleneck_file):
         did_hit_error = True
     if did_hit_error:
         return None
-    return bottleneck_values
+    return bottleneck_values[1:]
 
 
 test_bottleneck = get_bottleneck(bottleneck_file)

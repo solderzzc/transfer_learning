@@ -40,7 +40,7 @@ random_scale = 0
 random_brightness = 0
 
 # pylint: enable=line-too-long
-BOTTLENECK_TENSOR_SIZE = 2048
+BOTTLENECK_TENSOR_SIZE = 2047
 MODEL_INPUT_WIDTH = 299
 MODEL_INPUT_HEIGHT = 299
 MODEL_INPUT_DEPTH = 3
@@ -184,7 +184,7 @@ def get_bottleneck(sess, image_lists, label_name, index, image_dir,
         did_hit_error = True
     if did_hit_error:
         return None
-    return bottleneck_values
+    return bottleneck_values[1:]
 
 
 def cache_bottlenecks(sess, image_lists, image_dir, bottleneck_dir):
